@@ -1,0 +1,506 @@
+---
+title: '200615938'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ST2195 Coursework
+### ROY LEE JING YI, 200615938
+
+Setting our working directory and importing libraries for our session
+```{r}
+#macbook
+#setwd("/Users/roylee/OneDrive/SIM Year 2/ST2195 Programming to Data Science/Coursework_st2195")
+#windows
+setwd("D:/OneDrive/SIM Year 2/ST2195 Programming to Data Science/Coursework_st2195")
+
+library(tidyverse)
+library(tidymodels)
+library(ggplot2)
+library(dplyr)
+library(zoo)
+library(reshape2)
+#install.packages("wesanderson")
+#install.packages("viridis")
+library(wesanderson)
+library(viridis) 
+
+#machinelearning
+library(mlr3)
+library(mlr3learners)
+library(mlr3pipelines)
+library(mlr3tuning)
+library(skimr)
+```
+
+### Preparing our data
+
+Once we've downloaded the necesary data files from Harvard Dataverse at https://doi.org/10.7910/DVN/HG7NV7.
+We can being to read the csv files into dataframe and make some tweaks.
+
+The following files will be used:
+1. flights.csv (from our Python project)
+2. airports.csv, carriers.csv, n_plane-data.csv (from Python project)
+```{r}
+flights <- read.csv("flights.csv") #csv file saved from Py
+airports = read.csv("airports.csv")
+carriers = read.csv("carriers.csv")
+plane_data= read.csv("n_plane-data.csv") #csv file saved from Py
+
+# Rename columns within dataframe for later.
+#str(plane_data) # Find col index to rename
+names(plane_data)[2] <- "TailNum"
+
+dep_airports <- airports
+#str(dep_airports) # Find col index to rename
+names(dep_airports)[1] <- "Origin"
+names(dep_airports)[4] <- "DepState"
+
+arr_airports <- airports
+#str(arr_airports) # Find col index to rename
+names(arr_airports)[1] <- "Dest"
+names(arr_airports)[4] <- "ArrState"
+```
+
+
+## Q1. What is the best time of day, time of week and time of the year to fly to minimize delay
+## Best time of day to fly to minimize delay
+```{r, fig.width=12,fig.height=8}
+flights$DepTime_range <- cut(flights$DepTime,
+               breaks=c(0, 600, 1200, 1800, 2400),
+               labels=c("12am to 6am","6am to 12pm","12pm to 6pm","6pm to 12am"),
+               include.lowest = TRUE)
+# subset new df with DepTime_range, DepDelay, ArrDelay columns
+q1_timeofday <- flights %>%
+  select(DepTime_range,DepDelay,ArrDelay)
+# Group by DepTime_range then get mean of DepDelay and ArrDelay
+q1_timeofday <- q1_timeofday %>% group_by(DepTime_range) %>%
+  summarise_all("mean")
+# 'Melt' DepTime and ArrTime into common variable
+q1_timeofday <- melt(q1_timeofday, id.vars='DepTime_range')
+#head(q1_timeofday)
+
+# plot
+plot_timeofday <- ggplot(q1_timeofday, aes(x=DepTime_range, y=value, fill=variable, width=0.7)) +
+  geom_bar(stat='identity', position='dodge') +
+  ggtitle("Average Delay by Time of Day") + 
+  xlab("Time of day") +
+  ylab("Average Delay in minutes")
+plot_timeofday + scale_fill_manual(values=c("#899DA4", "#C7B19C"),
+                         name="Type of Delay",
+                         labels=c("Departure","Arrival"))
+```
+From this graph, we can observe that flights between 6am to 12pm has the lowest average in both arrival delays and departure delays. 
+We can confidently conclude that Saturday is the best time of day to fly to minimize delays.
+
+
+## Best time of week to fly to minimize delay
+```{r, fig.width=12,fig.height=8}
+# create new df with DayOfWeek, DepDelay, ArrDelay columns
+q1_dayofweek <- flights %>%
+  select(DayOfWeek,DepDelay,ArrDelay) 
+# group by DayOfWeek then get mean of DepDelay and ArrDelay
+q1_dayofweek <- q1_dayofweek %>% 
+  group_by(DayOfWeek) %>%
+  summarise_all("mean")
+head(q1_dayofweek)
+# 'Melt' DepTime and ArrTime into common variable for side by side bar-chart
+q1_dayofweek <- melt(q1_dayofweek, id.vars='DayOfWeek')
+head(q1_dayofweek)
+
+# plot
+plot_dayofweek <- ggplot(q1_dayofweek, aes(x=DayOfWeek, y=value, fill=variable, width=0.7)) +
+  geom_bar(stat='identity', position='dodge') +
+  ggtitle("Average Delay by Day of Week") + 
+  scale_x_discrete(limits=c('Mon', 'Tue', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun')) +
+  xlab("Day of the week") +
+  ylab("Average Delay in minutes")
+plot_dayofweek + scale_fill_manual(values=c("#899DA4", "#C7B19C"),
+                         name="Type of Delay",
+                         labels=c("Departure","Arrival"))
+```
+From this graph, we can observe that flights on Saturday has the lowest average in arrival delays while Tuesdays have the lowest average in departure delays.
+We can conclude that Saturday is the best time of week to fly to minimize delays as you are more likely to reach your destination earlier though you depart late.
+
+
+## Best time of year to fly to minimize delay
+```{r, fig.width=12,fig.height=8}
+q1_timeofyear <- flights %>%
+  select(Month,DepDelay,ArrDelay) 
+# group by Month then get mean of DepDelay and ArrDelay
+q1_timeofyear <- q1_timeofyear %>% 
+  group_by(Month) %>%
+  summarise_all("mean")
+#head(q1_timeofyear)
+
+# 'Melt' DepTime and ArrTime into common variable for side by side bar-chart
+q1_timeofyear <- melt(q1_timeofyear, id.vars='Month')
+#head(q1_timeofyear)
+
+# plot graph
+plot_timeofyear <- ggplot(q1_timeofyear, aes(x=Month, y=value, fill=variable, width=0.7)) +
+  geom_bar(stat='identity', position='dodge') +
+  ggtitle("Average Delay by Time of the Year") + 
+  scale_x_discrete(limits=c('Jan', 'Feb', 'Mar', 'Apr', 'May', 'June',
+                            'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec')) +
+  xlab("Month of the year") +
+  ylab("Delays in minutes")
+plot_timeofyear + scale_fill_manual(values=c("#899DA4", "#C7B19C"),
+                         name="Type of Delay",
+                         labels=c("Departure","Arrival"))
+```
+From this graph, we can observe that flights in June, July, August and December have the highest average delay for arrivals and departures whereas flights from Jan to May and Sept to Nov have relatively lower delays.
+We can conclude that the best time of the year to fly to minimize delay are in the months leading up to June, and especially in the last quarter in the months leading up to December.
+
+
+\newpage
+## Q2. Do older planes suffer more delay?
+```{r, fig.width=12,fig.height=8}
+q2_flights <- left_join(flights,plane_data,by='TailNum') %>%
+  select(contains(c('PlaneYear','Depdelay','ArrDelay'))) %>%
+  na.omit(PlaneYear)# remove NA values
+#str(q2_flights) # check datatype of rows
+#min(q2_flights$PlaneYear) # check if all useless values have been filtered out
+
+# create new column: PlanePeriod that groups PlaneYear
+q2_flights$PlanePeriod <- cut(q2_flights$PlaneYear,
+                              breaks=c(1955, 1960, 1965, 1970, 1975, 1980,
+                                       1985, 1990, 1995, 2000, 2007),
+                              labels=c("1956 to 1960", "1961 to 1965", "1966 to 1970", "1971 to 1975",
+                                        "1976 to 1980","1981 to 1985", "1986 to 1990", "1991 to 1995", 
+                                        "1996 to 2000", "2001 to 2007"))
+#q2_flights[is.na(q2_flights$PlanePeriod), ] check which rows in 'PlanePeriod is null/NA
+# Prepare data for plotting
+q2_flights <- q2_flights %>% 
+  select(PlanePeriod,DepDelay,ArrDelay) %>%
+  group_by(PlanePeriod) %>%
+  summarise_all("mean")
+#head(q2_flights)
+# 'Melt' DepTime and ArrTime into common variable for side by side bar-chart
+q2_flights <- melt(q2_flights, id.vars='PlanePeriod')
+#head(q2_flights)
+
+## Plot Data
+q2_plot <- ggplot(q2_flights, aes(y=value, x=PlanePeriod, fill=variable, width=0.6)) +
+  geom_bar(stat='identity', position='dodge') +
+  ggtitle("Average flight delays grouped by Period of Manufacture") + 
+  ylab("Period of Manufacture") +
+  xlab("Average Delay in minutes") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+q2_plot + scale_fill_manual(values = wes_palette('IsleofDogs2')[2:1],
+                         name="Type of Delay",
+                         labels=c("Departure","Arrival"))
+```
+From this graph, there is no significant difference in the average delays of flights between planes manufactured in different periods. Nor is there an distinct pattern when comparing older and newer planes. Although planes manufactured from 1956 to 1960 have the longest average delay, planes manufactured from 1961 to 1965 actually have considerably shorter delays. 
+After this time period however, we see a stagnation in the average of flight delays instead of a drop indicating that newer planes are no better than older planes. Hence it is there is no substantial evidence to conclude if older planes suffer more delays. 
+
+
+\newpage
+## Q3. How does the number of people flying between locations change over time?
+
+## For flight departure:
+```{r, fig.width=12,fig.height=8}
+## Departure pattern
+# cleaning data
+q3_depart <- left_join(flights,dep_airports,by='Origin') %>%
+  select(contains(c('Date','DepState'))) %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%  # convert Date columns from chr to datetime
+  mutate(yearQtr = as.yearqtr(Date, format)) %>%  # convert Date(datetime) column to Monthly period
+  group_by(yearQtr, DepState) %>% 
+  summarise(StateCount = n()) %>% na.omit('DepState')
+#head(q3_depart)  
+#str(q3_depart)
+
+# plotting data
+plot_dep <- ggplot(q3_depart, aes(x=reorder(DepState, -StateCount), y=StateCount))
+plot_dep + geom_point(aes(colour = factor(yearQtr))) +
+  scale_color_viridis(option='magma', direction=-1, discrete=TRUE, name="Yearly Quarter") +
+  ggtitle("Flight departure pattern per state from 2006 to 2007") + 
+  xlab("State") +
+  ylab("Number of flights") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+## For flight arrivals:
+```{r, fig.width=12,fig.height=8}
+# Arrival pattern
+# clean the data
+q3_arr <- left_join(flights,arr_airports,by='Dest') %>%
+  select(contains(c('Date','ArrState'))) %>%
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d")) %>%
+  mutate(yearQtr = as.yearqtr(Date, format)) %>%
+  group_by(yearQtr, ArrState) %>% 
+  summarise(StateCount = n()) %>% na.omit('ArrState')
+#head(q3_arr)  
+#str(q3_arr)
+
+# plotting data
+plot_arr <- ggplot(q3_arr, aes(x=reorder(ArrState, -StateCount), y=StateCount))
+plot_arr + geom_point(aes(colour = factor(yearQtr)), size = 2) +
+  scale_color_viridis(option='magma', direction=-1, discrete=TRUE, name="Yearly Quarter") +
+  ggtitle("Flight Arrival pattern per state from 2006 to 2007") + 
+  xlab("State") +
+  ylab("Number of flights") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+From both graphs we can observe that California(CA), Texas(TX), Illinois(IL), and Georgia(GA) ranks the highest in terms of outgoing and incoming flights between 2006 and 2007.
+
+We can notice a growing trend for US states with substantial outgoing and incoming flights, where the '2007 Q4' plot is higher than the earlier quarters plot. This indicates that the number of people flying in and out of popular states have increased from 2006 to 2007.
+
+However states with a much lower flight count from 2006 to 2007 like the Virgin islands(VI) or Detroit (DE), has had minimal growth from 2006 to 2007.
+
+
+\newpage
+## Q4. Can you detect cascading failures as delays in one airport create delays in another
+
+To observe if cascading failure is present, we will use data from flights travelling between Los Angeles airport (LAX) and John F kennedy aiport (JFK), during within January 2007.
+
+```{r, fig.width=12,fig.height=8}
+# We create a new dataframe by filtering out the data we want from 'flights'. 
+# We then mutate a column that describes the flight status according to its value in 'ArrDelay' column
+q4_flights <- flights %>%
+  filter((Year == 2007), (Month == 1), (Origin == 'LAX'), (Dest == 'JFK')) %>%
+  select(contains(c('DepDelay','ArrDelay'))) %>%
+  mutate(arrStatus = case_when(ArrDelay > 0 ~ "Delayed", T ~ "Early"))
+names(q4_flights)
+head(q4_flights)
+
+# plotting the graph
+q4_plot <- ggplot(q4_flights, aes(x=DepDelay, y=ArrDelay))
+q4_plot + geom_point(aes(colour = factor(arrStatus)), size=1.5 ) +  
+  scale_color_manual(values=c("#6d597a", "#eaac8b"), name="Flight Status") + 
+  geom_smooth(method='lm', formula=y~x, colour='#355070',   
+              data=filter(q4_flights, arrStatus == 'Delayed')) +
+  geom_smooth(method='lm', formula=y~x, colour='#e56b6f',
+              data=filter(q4_flights, arrStatus == 'Early')) +
+  ggtitle("Flight delays between LA and JFK airports in Jan 2007") +
+  xlab("Departure delay in minutes") +
+  ylab("Arrival delay in minutes")
+
+```
+
+From the graph, we can observe a positive correlation between between delays in departure and delays in arrivals, regardless if the flight is early or late. Hence we can confidently say that the likelihood of flights departing late also arriving late is quite high, and this delay will cascade by causing future flights to depart late.
+
+
+\newpage
+## Q5. Construct a model that predicts delays.
+
+##Preparing the data for classification and regression models
+```{r, fig.width=12,fig.height=8}
+
+# Create q5_ml dataframe, left_join 'flights' and 'plane_data'
+q5_ml <- left_join(flights,plane_data,by='TailNum') %>%
+  drop_na() %>%
+  filter(ArrDelay < 600)  %>%  # prevent outlier data from getting chosen
+  slice_sample(n= 100000) %>% # randomized sample size of 100,000
+  select(c(Month,DayofMonth,DayOfWeek,DepTime,DepDelay,
+           Origin,Dest,Distance,ArrDelay,PlaneYear)) %>%
+  mutate(ArrStatus = case_when(ArrDelay > 0 ~ "Delayed", T ~ "Early")) %>% # create our target variable
+  as.data.frame()
+#head(q5_ml)
+
+# convert datatype int/num to factor
+q5_ml$ArrStatus <- factor(q5_ml$ArrStatus)
+q5_ml$Month <- factor(q5_ml$Month,1:12,month.abb) # convert to factor and set abbreviation of months
+q5_ml$DayOfWeek <- factor(q5_ml$DayOfWeek,        # convert to factor and set labels
+                          labels= c("Mon","Tues","Wed","Thurs","Fri","Sat","Sun"))
+q5_ml$DayofMonth <- factor(q5_ml$DayofMonth)
+
+# check for NA values
+skim(q5_ml)
+```
+
+## Classification Models
+
+## Preparing variables for classification models
+```{r}
+# set up our classfication measure
+measure <- msr('classif.ce')
+
+# to deal with factor variables
+fencoder <- po("encode", method="treatment",
+               affect_columns=selector_type("factor"))
+
+# Split the rows of our dataset into 80% for training and 20% testing
+n <- nrow(q5_ml)
+train_set <- sample(n, round(0.8*n))
+test_set <- setdiff(1:n, train_set)
+
+```
+
+\newpage
+## Define our classification models:Logistic and Random Forest
+```{r, fig.width=12,fig.height=8}
+#=============== Q5 - Classification Error Models ===============
+## Creating tasks for classif.ce and select our target columns
+task <- TaskClassif$new('flight_delays', backend=q5_ml, target = 'ArrStatus')
+task <- task$select(c('DepTime','DepDelay','Distance','PlaneYear',
+                         'Month','DayOfWeek','DayofMonth'))
+task
+
+
+## LOGISTIC REGRESSION ======================================================
+# set up a learner for Logistic Regression using "classif.log_reg"
+learner_logr <- lrn("classif.log_reg") #
+glrn_logr <- GraphLearner$new(learner_logr)
+
+# Train the learner to carry out task on training data
+glrn_logr$train(task, row_ids=train_set)
+# Task the learner to predict results using test data
+pred_log <- glrn_logr$predict(task, row_ids=test_set)$score()
+
+## RANDOM FOREST =============================================================
+# set up a learner for Random Forest classification using "classif.ranger"
+learner_rf <- lrn('classif.ranger')
+learner_rf$param_set$values <- list(min.node.size=4)
+
+glrn_rf <- GraphLearner$new(learner_rf)
+
+tune_ntrees <- ParamSet$new (list(
+  ParamInt$new('classif.ranger.num.trees', lower = 50, upper = 600)
+))
+
+tuner<-tnr('grid_search')
+terminator <- trm('evals', n_evals = 20)
+
+at_rf <- AutoTuner$new(
+  learner = glrn_rf,
+  resampling = rsmp('cv', folds=3),
+  measure = measure,
+  search_space = tune_ntrees,
+  terminator = terminator,
+  tuner = tuner
+)
+
+at_rf$train(task, row_ids = train_set)
+pred_rf <- at_rf$predict(task, row_ids = test_set)$score()
+
+
+cat("Logistic Regression score:", pred_log, 
+    "\nRandom Forest Regression score:", pred_rf)
+
+data.frame(model = c("Logistic Regression", "Random Forest"),
+           classification_error = c(pred_log,pred_rf)
+           ) %>% 
+  pander::pander()
+
+```
+
+The results of both classification models shows us that there is no significant difference and are almost equally as capable of predicting flight delays with a classification error of approximately 20%. Hence either models could be used interchangeably as a prediction model using the classification measure.
+
+
+## Regression models
+
+## Preparing the data for regression models
+```{r}
+# Splitting the data into training and testing set
+q5_split <- initial_split(q5_ml,prop = .80,strata = ArrDelay)
+q5_split
+
+#Define the recipe that will prepare our data for modeling
+q5_recipe <-
+  recipe(training(q5_split),ArrDelay ~ .) %>% 
+  step_other(Origin,Dest,threshold = 0.01) %>% 
+  step_scale(DepTime,DepDelay,Distance) %>% 
+  prep()
+
+# Cross validate the recipe
+q5_crossv <- 
+  juice(q5_recipe) %>% 
+  vfold_cv(v = 2)
+
+```
+
+## Define our regression models: Linear Regression and Random Forest Regression
+```{r}
+model_lm <- 
+  linear_reg() %>% 
+  set_mode("regression") %>% 
+  set_engine("lm")
+
+model_rf <- 
+  rand_forest(mtry = tune(),trees = 1000,min_n = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("ranger",importance = "impurity")
+```
+
+##Training our Linear regression model
+```{r, fig.width=8,fig.height=8}
+fit_lm <-
+  workflow() %>%
+  add_model(model_lm) %>%
+  add_formula(formula(q5_recipe)) %>%
+  fit(juice(q5_recipe))
+
+data.frame(predict(fit_lm, bake(q5_recipe, testing(q5_split))),
+           true = testing(q5_split)$ArrDelay) %>% 
+  ggplot(aes(true, .pred)) +
+  geom_point(alpha = .4, colour="#735d78", shape=21) +
+  geom_abline(col = "#fb8500", alpha = .8, lwd=1.2) +
+  coord_fixed() +
+  labs(title = "Linear Regression Model \nPredicted vs Actual value for Arrival Delay")
+
+
+mse_lm = mean((predict(fit_lm, bake(q5_recipe, testing(q5_split))) %>% pull() -
+              testing(q5_split)$ArrDelay)^2,na.rm = T)
+mae_lm <- mean(abs(predict(fit_lm, bake(q5_recipe, testing(q5_split))) %>% pull() -
+              testing(q5_split)$ArrDelay),na.rm = T)
+```
+The Linear Regression model provides us with a pretty satisfactory result, all of its predicted points are fairly close to the smoothing line of the graph.
+
+
+## Training our Random Forest regression model
+```{r, fig.width=8,fig.height=8}
+rf_wf <-
+  workflow() %>%
+  add_model(model_rf) %>%
+  add_formula(formula(q5_recipe)) %>%
+  tune_grid(resamples = q5_crossv,metrics = metric_set(rmse),grid = 4)
+
+fit_rf <-
+  workflow() %>%
+  add_model(model_rf) %>%
+  add_formula(formula(q5_recipe)) %>%
+  finalize_workflow(select_best(rf_wf)) %>%
+  fit(juice(q5_recipe))
+
+## To speed up the process and avoid fitting random forest model again
+# write_rds(fit_rf,"Arr_rf.rds")
+# fit_rf <- readRDS("Arr_rf.rds")
+
+data.frame(predict(fit_rf, bake(q5_recipe, testing(q5_split))),
+           true = testing(q5_split)$ArrDelay) %>% 
+  ggplot(aes(true, .pred)) +
+  geom_point(alpha = .4, colour="#735d78", shape=21) +
+  geom_abline(col = "#fb8500", alpha = .8, lwd=1.2) +
+  coord_fixed() +
+  labs(title = "Random Forest Regression Model \nPredicted vs Actual value for Arrival Delay")
+
+
+mse_rf = mean((predict(fit_rf, bake(q5_recipe, testing(q5_split))) %>% pull() -
+              testing(q5_split)$ArrDelay)^2,na.rm = T)
+mae_rf <- mean(abs(predict(fit_rf, bake(q5_recipe, testing(q5_split))) %>% pull() -
+              testing(q5_split)$ArrDelay),na.rm = T)
+```
+The Random Forest Regression model provides us with similar results, all of its predicted points are fairly close to the smoothing line of the graph as well. 
+
+One big difference between both models is that when it comes to predicting early flights, with a lesser than 0 delay, the Random Forest model fares better as most of its prediction for early flights still falls below zero. The Linear Regression model however is not able to predict early flights as well.
+
+
+## Results of Linear Regression model vs Random Forest Regression model
+```{r}
+data.frame(model = c("Linear Regression", "Random Forest"),
+           rmse = c(sqrt(mse_lm),sqrt(mse_rf)),
+           mse = c(mse_lm,mse_rf),
+           mae = c(mae_lm,mae_rf)
+           ) %>% 
+  pander::pander()
+```
+
+The Root Mean Squared Error, Mean Squared Error, and Moving Average Error for both models are quite close, with the Random Forest Regression model performing just slightly better with lower values. The random forest model proves to be more efficient at predicting flight delays with the caveat that the model takes a much longer time to train and test.
+
+
+
